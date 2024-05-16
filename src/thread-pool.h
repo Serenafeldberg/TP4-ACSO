@@ -14,6 +14,7 @@
 #include <functional>  // for the function template used in the schedule signature
 #include <thread>      // for thread
 #include <vector>      // for vector
+#include "Semaphore.h" // for Semaphore
 
 class ThreadPool {
  public:
@@ -48,6 +49,12 @@ class ThreadPool {
  private:
   std::thread dt;                // dispatcher thread handle
   std::vector<std::thread> wts;  // worker thread handles
+  std::vector<std::function<void(void)>> thunks; // thunks to be executed
+  Semaphore sem;                 // semaphore to signal dispatcher
+  bool done = false;             // whether the dispatcher is done
+
+  void dispatcher(); // dispatcher function
+  void worker(); // worker function
 
 /**
  * ThreadPools are the type of thing that shouldn't be cloneable, since it's
