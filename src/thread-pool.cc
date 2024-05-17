@@ -54,14 +54,14 @@ void ThreadPool::dispatcher() {
             unique_lock<mutex> lock(mtx);
             if (done && thunks.empty()) return;
             if (!thunks.empty()) {
-                thunk = thunks.back();
+                thunk = thunks.front();
                 thunks.pop_back();
             }
         }
         if (thunk){
             {
                 lock_guard<mutex> lock(mtx);
-                ++active_workers;
+                active_workers++;
             }
             thread(&ThreadPool::worker, this, thunk).detach();
         }
@@ -74,9 +74,9 @@ void ThreadPool::worker(function<void(void)> thunk) {
         thunk();
         {
             lock_guard<mutex> lock(mtx);
-            --active_workers;
+            active_workers--;
             if (thunks.empty() && active_workers == 0) {
-                cv.notify_one();
+                cv.notify_all();
             }
         }
     }
