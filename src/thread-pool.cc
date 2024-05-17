@@ -8,24 +8,28 @@
 using namespace std;
 
 ThreadPool::ThreadPool(size_t numThreads) : worker_sem(0), dispatcher_sem(0) {
-    dt = thread([this]() { dispatcher(); });
+    workers.resize(numThreads);
+    dt = thread([this]() { dispatcher(); });          // dispatcher thread
     wts.resize(numThreads);
     for (size_t i = 0; i < numThreads; ++i) {
-        wts[i] = thread([this]() { worker(); });
+        wts[i] = thread([this, i]() { worker(i); });  // worker thread
     }
 }
 
 void ThreadPool::schedule(const function<void(void)>& thunk) {
     {
         lock_guard<mutex> lock(mtx);
-        thunks.push_back(thunk);
+        thunks.push(thunk); 
     }
-    cv.notify_one();
+    cv.notify_one(); 
 }
 
 void ThreadPool::wait() {
-    unique_lock<mutex> lock(mtx);
-    cv.wait(lock, [this]() { return thunks.empty() && active_workers == 0; });
+    {
+        unique_lock<mutex> lock(mtx);
+        cv.wait(lock, [this]() { return thunks.empty() && all_of(workers.begin(), workers.end(), [](const Worker& w) { return !w.occupied; }); });
+    
+    }
 
 }
 
@@ -34,51 +38,50 @@ ThreadPool::~ThreadPool() {
         lock_guard<mutex> lock(mtx);
         done = true;
     }
-    cv.notify_all();
+    cv.notify_all(); 
 
     dt.join();
-    for (size_t i = 0; i < wts.size(); ++i) {
+    for (auto& wt : wts) {
         worker_sem.signal();
-        wts[i].join();
+        wt.join();
     }
 }
 
 void ThreadPool::dispatcher() {
-    while (true){
+    while (true) {
         unique_lock<mutex> lock(mtx);
-        cv.wait(lock, [this]() { return done || !thunks.empty(); });
-        if (done) break;
+        cv.wait(lock, [this]() { return !thunks.empty() || done; });
 
-        if (!thunks.empty()) {
-            worker_sem.signal();
-        }
-    }
+        if (done && thunks.empty()) break;
 
-}
-
-void ThreadPool::worker() {
-    while (true){
-        worker_sem.wait();
-        if (done) break;
-
-        function <void(void)> thunk;
-        {
-            lock_guard<mutex> lock(mtx);
-            if (!thunks.empty()) {
-                thunk = thunks.front();
-                thunks.pop_back();
-                ++active_workers;
-            } else{
-                continue;
+        for (size_t i = 0; i < workers.size(); ++i) {
+            if (!workers[i].occupied && !thunks.empty()) {
+                workers[i].thunk = thunks.front();
+                thunks.pop();
+                workers[i].occupied = true;
+                workers[i].cv_worker.notify_one(); 
+                break;
             }
         }
+    }
+}
 
-        thunk();
-        {
-            lock_guard<mutex> lock(mtx);
-            --active_workers;
-            if (thunks.empty() && active_workers == 0) {
-                cv.notify_all();
+void ThreadPool::worker(size_t workerid) {
+    while (true) {
+        unique_lock<mutex> lock(mtx);
+        workers[workerid].cv_worker.wait(lock, [this, workerid]() { return workers[workerid].occupied || done; });
+
+        if (done) break;
+
+        if (workers[workerid].occupied) {
+            workers[workerid].thunk();  
+            workers[workerid].occupied = false;
+
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                if (thunks.empty() && all_of(workers.begin(), workers.end(), [](const Worker& w) { return !w.occupied; })) {
+                    cv.notify_all(); 
+                }
             }
         }
     }

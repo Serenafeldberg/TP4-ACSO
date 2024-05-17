@@ -16,6 +16,7 @@
 #include <vector>      // for vector
 #include "Semaphore.h" // for Semaphore
 #include <condition_variable>
+#include <queue>
 
 class ThreadPool {
  public:
@@ -50,7 +51,7 @@ class ThreadPool {
  private:
   std::thread dt;                // dispatcher thread handle
   std::vector<std::thread> wts;  // worker thread handles
-  std::vector<std::function<void(void)>> thunks; // thunks to be executed
+  std::queue<std::function<void(void)>> thunks; // queue of thunks to execute
 
   std::mutex mtx;               // mutex for synchronization
   std::condition_variable cv;   // condition variable for synchronization
@@ -58,10 +59,17 @@ class ThreadPool {
   Semaphore dispatcher_sem;            // semaphore to signal workers
 
   bool done = false;            // whether the dispatcher is done
-  size_t active_workers = 0;    // number of active workers
 
   void dispatcher(); // dispatcher function
-  void worker();     // worker function
+  void worker( size_t workerid);     // worker function
+
+  class Worker {
+    public:
+      bool occupied = false;
+      std::function<void(void)> thunk;
+      std::condition_variable cv_worker;
+  };
+  std::vector<Worker> workers;   // worker threads
 
 /**
  * ThreadPools are the type of thing that shouldn't be cloneable, since it's
