@@ -15,6 +15,7 @@
 #include <thread>      // for thread
 #include <vector>      // for vector
 #include "Semaphore.h" // for Semaphore
+#include <condition_variable>
 
 class ThreadPool {
  public:
@@ -52,8 +53,10 @@ class ThreadPool {
   std::vector<std::function<void(void)>> thunks; // thunks to be executed
   Semaphore sem;                 // semaphore to signal dispatcher
   bool done = false;             // whether the dispatcher is done
+  std::mutex mtx;                // mutex for condition variable
+  std::condition_variable cv;    // condition variable for dispatcher
+  size_t active_workers;         // number of active workers
 
-  void dispatcher(); // dispatcher function
   void worker(); // worker function
 
 /**
