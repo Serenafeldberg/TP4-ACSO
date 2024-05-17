@@ -7,7 +7,8 @@
 #include "thread-pool.h"
 using namespace std;
 
-ThreadPool::ThreadPool(size_t numThreads) : done(false), worker_sem(0), dispatcher_sem(numThreads), workers(numThreads) {
+ThreadPool::ThreadPool(size_t numThreads) 
+    : worker_sem(0), dispatcher_sem(numThreads), done(false), workers(numThreads) {
     for (size_t i = 0; i < numThreads; i++) {
         wts.push_back(thread([this, i] { worker(i); }));
     }
