@@ -30,64 +30,55 @@ void ThreadPool::wait() {
 }
 
 ThreadPool::~ThreadPool() {
-    done = true;
+    {
+        lock_guard<mutex> lock(mtx);
+        done = true;
+    }
     cv.notify_all();
 
     dt.join();
     for (size_t i = 0; i < wts.size(); ++i) {
+        worker_sem.signal();
         wts[i].join();
     }
 }
 
 void ThreadPool::dispatcher() {
-    while (!done){
-        function<void(void)> thunk;
-        {
-            unique_lock<mutex> lock(mtx);
-            cv.wait(lock, [this]() { return done || !thunks.empty(); });
-            if (done && thunks.empty()) break;
-            if (!thunks.empty()) {
-                thunk = thunks.front();
-                thunks.pop_back();
-            }
-        }
-        if (thunk) {
-            worker_sem.wait();
-            thread([this, thunk]() {
-                thunk();
-                dispatcher_sem.signal();
-            }).detach();
+    while (true){
+        unique_lock<mutex> lock(mtx);
+        cv.wait(lock, [this]() { return done || !thunks.empty(); });
+        if (done) break;
 
+        if (!thunks.empty()) {
+            worker_sem.signal();
         }
     }
 
 }
 
 void ThreadPool::worker() {
-    while (!done) {
-        dispatcher_sem.signal();
+    while (true){
         worker_sem.wait();
+        if (done) break;
+
+        function <void(void)> thunk;
         {
             lock_guard<mutex> lock(mtx);
-            active_workers++;
+            if (!thunks.empty()) {
+                thunk = thunks.front();
+                thunks.pop_back();
+                ++active_workers;
+            } else{
+                continue;
+            }
         }
-        dispatcher_sem.wait();
-        if (!done) {
-            function<void(void)> thunk;
-            {
-                lock_guard<mutex> lock(mtx);
-                if (!thunks.empty()) {
-                    thunk = thunks.front();
-                    thunks.pop_back();
-                }
-            }
-            if (thunk) {
-                thunk();
-            }
-            {
-                lock_guard<mutex> lock(mtx);
-                active_workers--;
-                cv.notify_one();
+
+        thunk();
+        {
+            lock_guard<mutex> lock(mtx);
+            --active_workers;
+            if (thunks.empty() && active_workers == 0) {
+                cv.notify_all();
             }
         }
     }
