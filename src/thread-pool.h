@@ -65,11 +65,14 @@ class ThreadPool {
   void dispatcher(); // dispatcher function
   void worker( size_t workerid);     // worker function
 
-  class Worker {
-    public:
-      bool occupied = false;
-      std::function<void(void)> thunk;
-      std::condition_variable cv_worker;
+  struct Worker {
+    bool occupied = false;
+    std::function<void(void)> thunk;
+    std::condition_variable cv_worker;
+
+    Worker() = default;
+    Worker(const Worker&) = delete;
+    Worker& operator=(const Worker&) = delete;
   };
   std::vector<Worker> workers;   // worker threads
 
