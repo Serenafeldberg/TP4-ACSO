@@ -81,25 +81,27 @@ void ThreadPool::worker(size_t workerid) {
 
 void ThreadPool::dispatcher() {
     while (true) {
-        unique_lock<mutex> lock(mtx);
-        cv.wait(lock, [this] {
-            return !thunks.empty() || done;
-        });
+        {
+            unique_lock<mutex> lock(mtx);
+            cv.wait(lock, [this] {
+                return !thunks.empty() || done;
+            });
 
-        if (done && thunks.empty()) {
-            return;
-        }
+            if (done && thunks.empty()) {
+                return;
+            }
 
-        if (!thunks.empty()) {
-            dispatcher_sem.wait();
+            if (!thunks.empty()) {
+                dispatcher_sem.wait();
 
-            for (size_t i = 0; i < workers.size(); ++i) {
-                if (!workers[i].occupied) {
-                    workers[i].thunk = thunks.front();
-                    thunks.pop();
-                    workers[i].occupied = true;
-                    workers[i].cv_worker.notify_one();
-                    break;
+                for (size_t i = 0; i < workers.size(); ++i) {
+                    if (!workers[i].occupied) {
+                        workers[i].thunk = thunks.front();
+                        thunks.pop();
+                        workers[i].occupied = true;
+                        workers[i].cv_worker.notify_one();
+                        break;
+                    }
                 }
             }
         }
