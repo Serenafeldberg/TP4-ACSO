@@ -7,79 +7,98 @@
 #include "thread-pool.h"
 using namespace std;
 
-ThreadPool::ThreadPool(size_t numThreads) : worker_sem(0), dispatcher_sem(0), workers(numThreads) {
-    dt = thread([this]() { dispatcher(); });
-    wts.reserve(numThreads);
-    for (size_t i = 0; i < numThreads; ++i) {
-        wts.emplace_back([this, i]() { worker(i); });
+ThreadPool::ThreadPool(size_t numThreads) : done(false), worker_sem(0), dispatcher_sem(numThreads), workers(numThreads) {
+    for (size_t i = 0; i < numThreads; i++) {
+        wts.push_back(thread([this, i] { worker(i); }));
     }
+    dt = thread([this] { dispatcher(); });
 }
 
 void ThreadPool::schedule(const function<void(void)>& thunk) {
     {
-        lock_guard<mutex> lock(mtx);
-        thunks.push(thunk); 
+        unique_lock<mutex> lock(mtx);
+        thunks.push(thunk);
     }
-    cv.notify_one(); 
+    cv.notify_one();
 }
 
 void ThreadPool::wait() {
-    {
-        unique_lock<mutex> lock(mtx);
-        cv.wait(lock, [this]() { return thunks.empty() && all_of(workers.begin(), workers.end(), [](const Worker& w) { return !w.occupied; }); });
-    
+    unique_lock<mutex> lock(mtx);
+    cv.wait(lock, [this]() {
+        return thunks.empty() && all_of(workers.begin(), workers.end(), [](const Worker& w) { return !w.occupied; });
+    });
+
+    for (auto& wt : wts) {
+        worker_sem.signal();
+        wt.join();
     }
 
+    for (auto& worker : workers) {
+        worker.occupied = false;
+    }
 }
 
 ThreadPool::~ThreadPool() {
     {
-        lock_guard<mutex> lock(mtx);
+        unique_lock<mutex> lock(mtx);
         done = true;
     }
-    cv.notify_all(); 
-
+    cv.notify_all();
     dt.join();
+
     for (auto& wt : wts) {
         worker_sem.signal();
         wt.join();
     }
 }
 
-void ThreadPool::dispatcher() {
+void ThreadPool::worker(size_t workerid) {
     while (true) {
-        unique_lock<mutex> lock(mtx);
-        cv.wait(lock, [this]() { return !thunks.empty() || done; });
+        function<void()> task;
+        {
+            unique_lock<mutex> lock(mtx);
+            workers[workerid].cv_worker.wait(lock, [this, workerid] {
+                return workers[workerid].occupied || done;
+            });
 
-        if (done && thunks.empty()) break;
-
-        for (size_t i = 0; i < workers.size(); ++i) {
-            if (!workers[i].occupied && !thunks.empty()) {
-                workers[i].thunk = thunks.front();
-                thunks.pop();
-                workers[i].occupied = true;
-                workers[i].cv_worker.notify_one(); 
-                break;
+            if (done && !workers[workerid].occupied) {
+                return;
             }
+
+            task = workers[workerid].thunk;
+        }
+
+        task();
+
+        {
+            lock_guard<mutex> lock(mtx);
+            workers[workerid].occupied = false;
+            dispatcher_sem.signal();
         }
     }
 }
 
-void ThreadPool::worker(size_t workerid) {
+void ThreadPool::dispatcher() {
     while (true) {
         unique_lock<mutex> lock(mtx);
-        workers[workerid].cv_worker.wait(lock, [this, workerid]() { return workers[workerid].occupied || done; });
+        cv.wait(lock, [this] {
+            return !thunks.empty() || done;
+        });
 
-        if (done) break;
+        if (done && thunks.empty()) {
+            return;
+        }
 
-        if (workers[workerid].occupied) {
-            workers[workerid].thunk();  
-            workers[workerid].occupied = false;
+        if (!thunks.empty()) {
+            dispatcher_sem.wait();
 
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                if (thunks.empty() && all_of(workers.begin(), workers.end(), [](const Worker& w) { return !w.occupied; })) {
-                    cv.notify_all(); 
+            for (size_t i = 0; i < workers.size(); ++i) {
+                if (!workers[i].occupied) {
+                    workers[i].thunk = thunks.front();
+                    thunks.pop();
+                    workers[i].occupied = true;
+                    workers[i].cv_worker.notify_one();
+                    break;
                 }
             }
         }
