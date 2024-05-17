@@ -7,7 +7,8 @@
 #include "thread-pool.h"
 using namespace std;
 
-ThreadPool::ThreadPool(size_t numThreads) : sem(0), active_workers(0), done(false) {
+ThreadPool::ThreadPool(size_t numThreads) : sem(0), done(false), active_workers(0) {
+    dt = thread ([this] {dispatcher();});
     for (size_t i = 0; i < numThreads; ++i) {
         wts.emplace_back(&ThreadPool::worker, this);
     }
@@ -32,6 +33,8 @@ ThreadPool::~ThreadPool() {
         lock_guard<mutex> lock(mtx);
         done = true;
     }
+    sem.signal();
+    dt.join();
     for (size_t i = 0; i < wts.size(); ++i) {
         sem.signal();
     }
@@ -43,21 +46,31 @@ ThreadPool::~ThreadPool() {
     }
 }
 
-void ThreadPool::worker() {
+void ThreadPool::dispatcher() {
     while (true) {
         sem.wait();
         function<void(void)> thunk;
         {
-            lock_guard<mutex> lock(mtx);
-            if (done) return;
-            if (thunks.empty()) {
-                sem.signal();
-                continue;
+            unique_lock<mutex> lock(mtx);
+            if (done && thunks.empty()) return;
+            if (!thunks.empty()) {
+                thunk = thunks.back();
+                thunks.pop_back();
             }
-            thunk = thunks.back();
-            thunks.pop_back();
-            ++active_workers;
         }
+        if (thunk){
+            {
+                lock_guard<mutex> lock(mtx);
+                ++active_workers;
+            }
+            thread(&ThreadPool::worker, this, thunk).detach();
+        }
+    }
+
+}
+
+void ThreadPool::worker(function<void(void)> thunk) {
+    if (thunk){
         thunk();
         {
             lock_guard<mutex> lock(mtx);

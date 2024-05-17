@@ -51,13 +51,14 @@ class ThreadPool {
   std::thread dt;                // dispatcher thread handle
   std::vector<std::thread> wts;  // worker thread handles
   std::vector<std::function<void(void)>> thunks; // thunks to be executed
-  Semaphore sem;                 // semaphore to signal dispatcher
-  bool done = false;             // whether the dispatcher is done
-  std::mutex mtx;                // mutex for condition variable
-  std::condition_variable cv;    // condition variable for dispatcher
-  size_t active_workers;         // number of active workers
+  std::mutex mtx;               // mutex for synchronization
+  std::condition_variable cv;   // condition variable for synchronization
+  Semaphore sem;                // semaphore to signal dispatcher
+  bool done = false;            // whether the dispatcher is done
+  size_t active_workers = 0;    // number of active workers
 
-  void worker(); // worker function
+  void dispatcher(); // dispatcher function
+  void worker(function<void(void)> thunk);     // worker function
 
 /**
  * ThreadPools are the type of thing that shouldn't be cloneable, since it's
