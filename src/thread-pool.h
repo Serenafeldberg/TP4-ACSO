@@ -17,6 +17,8 @@
 #include "Semaphore.h" // for Semaphore
 #include <condition_variable>
 #include <queue>
+#include <iostream>
+#include <algorithm>
 
 class ThreadPool {
  public:
