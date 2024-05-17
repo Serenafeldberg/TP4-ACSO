@@ -51,9 +51,12 @@ class ThreadPool {
   std::thread dt;                // dispatcher thread handle
   std::vector<std::thread> wts;  // worker thread handles
   std::vector<std::function<void(void)>> thunks; // thunks to be executed
+
   std::mutex mtx;               // mutex for synchronization
   std::condition_variable cv;   // condition variable for synchronization
-  Semaphore sem;                // semaphore to signal dispatcher
+  Semaphore worker_sem;                // semaphore to signal dispatcher
+  Semaphore dispatcher_sem;            // semaphore to signal workers
+
   bool done = false;            // whether the dispatcher is done
   size_t active_workers = 0;    // number of active workers
 

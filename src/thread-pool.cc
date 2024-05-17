@@ -7,10 +7,11 @@
 #include "thread-pool.h"
 using namespace std;
 
-ThreadPool::ThreadPool(size_t numThreads) : sem(0), done(false), active_workers(0) {
-    dt = thread ([this] {dispatcher();});
+ThreadPool::ThreadPool(size_t numThreads) : worker_sem(0), dispatcher_sem(0) {
+    dt = thread([this]() { dispatcher(); });
+    wts.resize(numThreads);
     for (size_t i = 0; i < numThreads; ++i) {
-        wts.emplace_back([this] {worker();});
+        wts[i] = thread([this]() { worker(); });
     }
 }
 
@@ -19,7 +20,7 @@ void ThreadPool::schedule(const function<void(void)>& thunk) {
         lock_guard<mutex> lock(mtx);
         thunks.push_back(thunk);
     }
-    sem.signal(); 
+    cv.notify_one();
 }
 
 void ThreadPool::wait() {
@@ -29,63 +30,64 @@ void ThreadPool::wait() {
 }
 
 ThreadPool::~ThreadPool() {
-    {
-        lock_guard<mutex> lock(mtx);
-        done = true;
-    }
-    sem.signal();
+    done = true;
+    cv.notify_all();
+
     dt.join();
     for (size_t i = 0; i < wts.size(); ++i) {
-        sem.signal();
-    }
-
-    for (auto& wt : wts) {
-        if (wt.joinable()) {
-            wt.join();
-        }
+        wts[i].join();
     }
 }
 
 void ThreadPool::dispatcher() {
-    while (true) {
-        sem.wait();
+    while (!done){
         function<void(void)> thunk;
         {
             unique_lock<mutex> lock(mtx);
+            cv.wait(lock, [this]() { return done || !thunks.empty(); });
             if (done && thunks.empty()) return;
             if (!thunks.empty()) {
                 thunk = thunks.front();
                 thunks.pop_back();
             }
         }
-        if (thunk){
-            {
-                lock_guard<mutex> lock(mtx);
-                active_workers++;
-            }
-            thread([this, thunk]() { worker(); }).detach();
+        if (thunk) {
+            worker_sem.wait();
+            thread([this, thunk]() {
+                thunk();
+                dispatcher_sem.signal();
+            }).detach();
+
         }
     }
 
 }
 
 void ThreadPool::worker() {
-    function<void(void)> thunk;
-    {
-        unique_lock<mutex> lock(mtx);
-        if (done && thunks.empty()) return;
-        if (!thunks.empty()) {
-            thunk = thunks.front();
-            thunks.pop_back();
-        }
-    }
-    if (thunk){
-        thunk();
+    while (!done) {
+        dispatcher_sem.signal();
+        worker_sem.wait();
         {
             lock_guard<mutex> lock(mtx);
-            active_workers--;
-            if (thunks.empty() && active_workers == 0) {
-                cv.notify_all();
+            active_workers++;
+        }
+        dispatcher_sem.wait();
+        if (!done) {
+            function<void(void)> thunk;
+            {
+                lock_guard<mutex> lock(mtx);
+                if (!thunks.empty()) {
+                    thunk = thunks.front();
+                    thunks.pop_back();
+                }
+            }
+            if (thunk) {
+                thunk();
+            }
+            {
+                lock_guard<mutex> lock(mtx);
+                active_workers--;
+                cv.notify_one();
             }
         }
     }
