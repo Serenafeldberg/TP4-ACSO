@@ -45,7 +45,7 @@ void ThreadPool::dispatcher() {
         {
             unique_lock<mutex> lock(mtx);
             cv.wait(lock, [this]() { return done || !thunks.empty(); });
-            if (done && thunks.empty()) return;
+            if (done && thunks.empty()) break;
             if (!thunks.empty()) {
                 thunk = thunks.front();
                 thunks.pop_back();
