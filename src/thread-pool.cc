@@ -7,12 +7,11 @@
 #include "thread-pool.h"
 using namespace std;
 
-ThreadPool::ThreadPool(size_t numThreads) : worker_sem(0), dispatcher_sem(0) {
-    workers.resize(numThreads);
-    dt = thread([this]() { dispatcher(); });          // dispatcher thread
-    wts.resize(numThreads);
+ThreadPool::ThreadPool(size_t numThreads) : worker_sem(0), dispatcher_sem(0), workers(numThreads) {
+    dt = thread([this]() { dispatcher(); });
+    wts.reserve(numThreads);
     for (size_t i = 0; i < numThreads; ++i) {
-        wts[i] = thread([this, i]() { worker(i); });  // worker thread
+        wts.emplace_back([this, i]() { worker(i); });
     }
 }
 
