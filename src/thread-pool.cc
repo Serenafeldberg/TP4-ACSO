@@ -10,7 +10,7 @@ using namespace std;
 ThreadPool::ThreadPool(size_t numThreads) : sem(0), done(false), active_workers(0) {
     dt = thread ([this] {dispatcher();});
     for (size_t i = 0; i < numThreads; ++i) {
-        wts.emplace_back(&ThreadPool::worker, this);
+        wts.emplace_back([this] {worker();});
     }
 }
 
@@ -63,13 +63,22 @@ void ThreadPool::dispatcher() {
                 lock_guard<mutex> lock(mtx);
                 active_workers++;
             }
-            thread(&ThreadPool::worker, this, thunk).detach();
+            thread([this, thunk]() { worker(); }).detach();
         }
     }
 
 }
 
-void ThreadPool::worker(function<void(void)> thunk) {
+void ThreadPool::worker() {
+    function<void(void)> thunk;
+    {
+        unique_lock<mutex> lock(mtx);
+        if (done && thunks.empty()) return;
+        if (!thunks.empty()) {
+            thunk = thunks.front();
+            thunks.pop_back();
+        }
+    }
     if (thunk){
         thunk();
         {

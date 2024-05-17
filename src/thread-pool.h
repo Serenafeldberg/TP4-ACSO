@@ -58,7 +58,7 @@ class ThreadPool {
   size_t active_workers = 0;    // number of active workers
 
   void dispatcher(); // dispatcher function
-  void worker(function<void(void)> thunk);     // worker function
+  void worker();     // worker function
 
 /**
  * ThreadPools are the type of thing that shouldn't be cloneable, since it's
