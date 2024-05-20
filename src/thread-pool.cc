@@ -29,15 +29,6 @@ void ThreadPool::wait() {
     cv.wait(lock, [this]() {
         return thunks.empty() && active_workers == 0;
     });
-
-    // for (auto& wt : wts) {
-    //     worker_sem.signal();
-    //     wt.join();
-    // }
-
-    // for (auto& worker : workers) {
-    //     worker.occupied = false;
-    // }
 }
 
 ThreadPool::~ThreadPool() {
