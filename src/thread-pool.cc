@@ -30,14 +30,14 @@ void ThreadPool::wait() {
         return thunks.empty() && active_workers == 0;
     });
 
-    for (auto& wt : wts) {
-        worker_sem.signal();
-        wt.join();
-    }
+    // for (auto& wt : wts) {
+    //     worker_sem.signal();
+    //     wt.join();
+    // }
 
-    for (auto& worker : workers) {
-        worker.occupied = false;
-    }
+    // for (auto& worker : workers) {
+    //     worker.occupied = false;
+    // }
 }
 
 ThreadPool::~ThreadPool() {
