@@ -59,6 +59,7 @@ class ThreadPool {
   std::condition_variable cv;   // condition variable for synchronization
   Semaphore worker_sem;                // semaphore to signal dispatcher
   Semaphore dispatcher_sem;            // semaphore to signal workers
+  size_t active_workers = 0;          // number of active workers
 
   bool done = false;            // whether the dispatcher is done
 
