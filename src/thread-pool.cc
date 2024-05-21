@@ -32,6 +32,7 @@ void ThreadPool::wait() {
 }
 
 ThreadPool::~ThreadPool() {
+    wait();
     {
         unique_lock<mutex> lock(mtx);
         done = true;
