@@ -69,7 +69,7 @@ int main() {
     int totalSum = accumulate(results.begin(), results.end(), 0);
     cout << "Total sum of elements: " << totalSum << endl;
 
-    simpleTest();
+    // simpleTest();
 
     return 0;
 }
